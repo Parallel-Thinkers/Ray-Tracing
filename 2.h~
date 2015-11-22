@@ -1,0 +1,9 @@
+#include<stdio.h>
+
+typedef struct node{
+int data;
+}node;
+
+void print()
+{printf("shan");
+}

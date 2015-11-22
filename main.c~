@@ -1,0 +1,245 @@
+//Source = http://www.scratchapixel.com/lessons/3d-basic-rendering/introduction-to-ray-tracing/how-does-it-work
+
+#include<stdio.h>
+#include<fstream>
+#include<iostream>
+#include"vectors.h"
+#include"spheres.h"
+
+#define IN 10000000
+#define maxdepth 5
+
+vector c;
+sphere sp[6];
+sphere l;
+
+void rendering();
+vector tracing(vector *rayorigin,vector *raydir,int depth);
+double min(double a,double b)
+{
+if(a<b)return a;
+else return b;
+}
+double max(double a,double b)
+{
+if(a<b)return b;
+else return a;
+}
+double mixture(double a,double b,double mix)
+{
+return b*mix+a*(1-mix);
+}
+
+int main()
+{
+
+vector v1,v2,v3;
+    
+vec(&v1,0,-10004,-20);
+vec(&v2,0.20,0.20,0.20);
+vec(&v3,0,0,0);
+
+sph(v1,10000,v2,0,0,v3,sp);
+
+vec(&v1,0,0,-20);
+vec(&v2,1,0.32,0.36);
+
+sph(v1,4,v2,1,0.5,v3,sp+1);
+
+vec(&v1,5,-1,-15);
+vec(&v2,1.5,1.5,1.6);
+
+sph(v1,2,v2,1,0,v3,sp+2);
+
+vec(&v1,5,0,-25);
+vec(&v2,0.65,0.77,0.97);
+
+sph(v1,3,v2,1,0,v3,sp+3);
+
+vec(&v1,-5.5,0,-15);
+vec(&v2,0.90,0.90,0.90);
+
+sph(v1,3,v2,1,0,v3,sp+4);
+
+vec(&v1,0,20,-30);
+vec(&v2,0,0,0);
+vec(&v3,3,3,3);
+
+sph(v1,3,v2,0,0,v3,sp+5);
+
+rendering();
+}
+
+void rendering()
+{
+//Source = http://scala-blitz.github.io/home/documentation/examples//raytracer.html
+
+int width=640,height=480;
+vector im[width*height],*pi=im;
+double invwidth=1/double(width),invheight=1/double(height);
+double f=30,aspectr=width/double(height);
+double angle=tan(3.141592653589793*0.5*f/180);
+
+for(int y=0;y<height;y++){
+for(int x=0;x<width;x++,pi++) {
+double x1=(2*((x+0.5)*invwidth)-1)*angle*aspectr;
+double y1=(1-2*((y+0.5)*invheight))*angle;
+vector *raydir;
+raydir=(vector *)malloc(sizeof(vector));
+vec(raydir,x1,y1,-1);
+raydir=normalize(raydir);
+*pi=tracing(&c,raydir,0);
+}
+}
+
+std::ofstream o("./raytrace.ppm");
+o<<"P6\n"<<width<<" "<<height<<"\n255\n";
+for(int i=0;i<width*height;i++){
+o<<(char)(min(double(1),im[i].x)*255)<<
+   (char)(min(double(1),im[i].y)*255)<<
+   (char)(min(double(1),im[i].z)*255);
+}
+o.close();
+}
+
+vector tracing(vector *rayorigin,vector *raydir,int depth){
+
+double tn=IN;
+sphere *s=NULL;
+double t0=IN,t1=IN;
+for(int i=0;i<6;i++){
+
+if(sphere_ray_inter(sp[i],*rayorigin,*raydir,&t0,&t1)){
+
+if(t0<0)t0=t1;
+
+if(t0<tn){
+
+tn=t0;
+//if(i==2)printf("\nshan\n");
+s=&sp[i];
+}
+}
+}
+
+vector x;
+vector z;
+
+vec(&x,2,2,2);
+vec(&z,0.5,0.5,0.5);
+
+if(s==NULL)return x;
+//else return s->color;
+
+vector color=c;
+//printf("%f\n",tn);
+//getchar();
+vector *tee=vectmult(tn,raydir);
+vector *pointhit=vectadd(rayorigin,tee); 
+vector *nhit=vectsub(pointhit,&(s->centre));
+nhit=normalize(nhit); 
+
+double bias=1e-4;
+bool inside=false;
+
+if(dotproduct(raydir,nhit)>0){
+nhit=negative(nhit);
+inside=true;
+}
+
+if((s->transparency>0||s->reflectivity>0)&&depth<maxdepth){
+
+//tee=negative(raydir);
+
+double ratio=-(dotproduct(raydir,nhit));
+double fresnel=mixture(pow(1-ratio,3),1,0.1);
+
+double m=dotproduct(raydir,nhit);
+
+//Source : http://www.cs.rpi.edu/~cutler/classes/advancedgraphics/F05/lectures/13_ray_tracing.pdf
+
+tee=vectmult(m*2,nhit);
+vector *refldir=vectsub(raydir,tee);
+refldir=normalize(refldir);
+tee=vectmult(bias,nhit);
+tee=vectadd(pointhit,tee);
+vector reflection=tracing(tee,refldir,depth+1);
+//tee=vectmult(fresnel,&reflection);
+//return *tee;
+
+//Source : http://steve.hollasch.net/cgindex/render/refraction.txt
+
+vector refraction=c;
+vector *tee1;
+
+if(s->transparency){
+
+double io=1.1,eta=(inside)?io:1/io; 
+
+//tee=negative(nhit);
+
+double cosine=-(dotproduct(nhit,raydir));
+double k=1-eta*eta*(1-cosine*cosine);
+
+tee=vectmult((eta*cosine-sqrt(k)),nhit);
+tee1=vectmult(eta,raydir);
+vector *refrdir=vectadd(tee,tee1);
+refrdir=normalize(refrdir);
+tee=vectmult(bias,nhit);
+tee=vectsub(pointhit,tee);
+refraction=tracing(tee,refrdir,depth+1);
+//return refraction;
+}
+
+tee=vectmult(fresnel,&reflection);
+tee1=vectmult(((1-fresnel)*s->transparency),&refraction);
+tee=vectadd(tee,tee1);
+tee=crossproduct(&(s->color),tee);
+color=*tee;
+//return *tee;  
+}
+//return *tee;
+
+else {
+ 
+for(int i=0;i<6;i++){
+
+if(sp[i].emcolor.x>0){
+ 
+vector transmission;
+
+vec(&transmission,1,1,1);
+vector *lightdir=vectsub(&(sp[i].centre),pointhit);
+lightdir=normalize(lightdir);
+
+for(int j=0;j<6;j++){
+
+if (i != j){
+
+tee=vectmult(bias,nhit);
+tee=vectadd(pointhit,tee);
+if(sphere_ray_inter(sp[j],*tee,*lightdir,&t0,&t1)){
+transmission=c;
+break;
+}
+}
+}
+
+tee=crossproduct(&transmission,&(s->color));
+tee=crossproduct(&(sp[i].emcolor),tee);
+tee=vectmult((max(double(0),dotproduct(nhit,lightdir))),tee);
+tee=vectadd(&color,tee);
+color=*tee;
+}
+}
+}
+  //  return sphere->surfaceColor;
+
+return (*(vectadd(&color,&(s->emcolor))));
+}
+
+
+
+
+
+ 
